@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>课件提词器</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:"Microsoft YaHei","PingFang SC",system-ui,sans-serif; background:#fafafa; color:#18181b; }
+  button { cursor:pointer; font-family:inherit; }
+
+  /* ===== 编辑模式 ===== */
+  #editView { display:flex; flex-direction:column; height:100vh; }
+  header { display:flex; align-items:center; gap:12px; padding:16px 24px; background:#fff; border-bottom:1px solid #e4e4e7; }
+  header .logo { font-size:24px; }
+  header h1 { font-size:18px; }
+  header p { font-size:12px; color:#71717a; }
+  #editMain { flex:1; display:flex; flex-direction:column; gap:16px; max-width:896px; width:100%; margin:0 auto; padding:24px; overflow:hidden; }
+  #editor { flex:1; resize:none; padding:16px; font-size:16px; line-height:1.8; border:1px solid #d4d4d8; border-radius:8px; outline:none; background:#fff; }
+  #editor:focus { border-color:#6366f1; box-shadow:0 0 0 3px rgba(99,102,241,.15); }
+  #editBar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; }
+  .btn { display:inline-flex; align-items:center; gap:6px; border:1px solid #d4d4d8; background:#fff; border-radius:8px; padding:8px 14px; font-size:14px; color:#27272a; }
+  .btn:hover { background:#f4f4f5; }
+  .btn-primary { background:#4f46e5; border-color:#4f46e5; color:#fff; font-size:16px; padding:10px 22px; border-radius:10px; }
+  .btn-primary:hover { background:#4338ca; }
+  .btn-primary:disabled { opacity:.4; cursor:not-allowed; }
+  #stats { font-size:14px; color:#71717a; margin-left:8px; }
+
+  /* ===== 提词模式 ===== */
+  #playView { display:none; position:relative; height:100vh; overflow:hidden; background:#000; }
+  #progressWrap { position:absolute; top:0; left:0; right:0; height:4px; background:#27272a; z-index:20; }
+  #progressBar { height:100%; width:0; background:#6366f1; transition:width .15s; }
+  #guide { position:absolute; left:0; right:0; top:38%; z-index:10; pointer-events:none; }
+  #guide .band { margin:0 24px; border-top:2px solid rgba(99,102,241,.7); border-bottom:2px solid rgba(99,102,241,.7); background:rgba(99,102,241,.1); padding:4px 0; }
+  #scroller { height:100%; overflow-y:auto; scrollbar-width:none; }
+  #scroller::-webkit-scrollbar { display:none; }
+  #scriptBody { max-width:1024px; margin:0 auto; padding:0 40px; }
+  #scriptBody p { margin-bottom:32px; font-weight:500; line-height:1.4; color:#f4f4f5; }
+  #controls { position:absolute; left:0; right:0; bottom:0; z-index:20; transition:opacity .3s; }
+  #controls.hidden { opacity:0; pointer-events:none; }
+  #controlsInner { max-width:896px; margin:0 auto 20px; display:flex; flex-wrap:wrap; align-items:center; gap:12px 24px; background:rgba(24,24,27,.92); border:1px solid #3f3f46; border-radius:16px; padding:16px 24px; box-shadow:0 20px 40px rgba(0,0,0,.5); }
+  .cbtn { display:inline-flex; align-items:center; justify-content:center; gap:6px; border:1px solid #52525b; background:transparent; color:#e4e4e7; border-radius:9999px; font-size:14px; padding:8px 14px; }
+  .cbtn:hover { background:#27272a; }
+  #playPauseBtn { width:48px; height:48px; background:#4f46e5; border-color:#4f46e5; color:#fff; font-size:20px; }
+  #playPauseBtn:hover { background:#4338ca; }
+  .sliderGroup { display:flex; align-items:center; gap:10px; flex:1; min-width:180px; }
+  .sliderGroup label { font-size:13px; color:#a1a1aa; white-space:nowrap; }
+  .sliderGroup input[type=range] { flex:1; accent-color:#6366f1; }
+  #keysHint { width:100%; text-align:center; font-size:12px; color:#71717a; }
+</style>
+</head>
+<body>
+
+<!-- 编辑模式 -->
+<div id="editView">
+  <header>
+    <span class="logo">🎬</span>
+    <div>
+      <h1>课件提词器</h1>
+      <p>粘贴讲稿，一键开始滚屏提词</p>
+    </div>
+  </header>
+  <main id="editMain">
+    <textarea id="editor" placeholder="在这里粘贴或输入你的讲稿 / 说课稿……"></textarea>
+    <div id="editBar">
+      <div>
+        <button class="btn" id="sampleBtn">📄 载入示例讲稿</button>
+        <button class="btn" id="clearBtn">🗑 清空</button>
+        <span id="stats"></span>
+      </div>
+      <button class="btn-primary" id="startBtn">▶ 开始提词（Ctrl+Enter）</button>
+    </div>
+  </main>
+</div>
+
+<!-- 提词模式 -->
+<div id="playView">
+  <div id="progressWrap"><div id="progressBar"></div></div>
+  <div id="guide"><div class="band"></div></div>
+  <div id="scroller">
+    <div style="height:38vh"></div>
+    <div id="scriptBody"></div>
+    <div style="height:62vh"></div>
+  </div>
+  <div id="controls">
+    <div id="controlsInner">
+      <button class="cbtn" id="playPauseBtn" title="播放/暂停（空格）">⏸</button>
+      <button class="cbtn" id="restartBtn" title="回到开头">⟲</button>
+      <div class="sliderGroup">
+        <label>速度 <span id="speedVal">3</span></label>
+        <input type="range" id="speedSlider" min="1" max="10" step="1" value="3">
+      </div>
+      <div class="sliderGroup">
+        <label>字号 <span id="fontVal">44</span></label>
+        <input type="range" id="fontSlider" min="24" max="80" step="2" value="44">
+      </div>
+      <button class="cbtn" id="editBackBtn" title="返回编辑（Esc）">✎ 编辑讲稿</button>
+      <div id="keysHint">空格 播放/暂停 · ↑↓ 调速 · Esc 返回编辑</div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var STORAGE_KEY = 'teleprompter-script';
+  var SAMPLE = '各位评委老师好，我今天说课的题目是《三角形的内角和》。\n\n' +
+'一、说教材\n本节课是人教版小学数学四年级下册的内容，是在学生已经认识了三角形的基本特征之后进行教学的。通过本节课的学习，学生将理解并掌握"三角形的内角和等于180度"这一重要结论，为后续学习多边形的内角和打下基础。\n\n' +
+'二、说学情\n四年级的学生已经具备了一定的动手操作能力和初步的逻辑推理能力，但他们的抽象思维仍然需要具体形象的支持。因此，本节课我将通过量一量、撕一撕、拼一拼等活动，让学生在操作中感知、在观察中发现。\n\n' +
+'三、说教学目标\n第一，知识与技能目标：理解并掌握三角形内角和是180度，能够运用这一结论解决简单的实际问题。\n第二，过程与方法目标：经历猜想、验证、归纳的过程，发展合情推理能力。\n第三，情感态度目标：在探究活动中体验数学的乐趣，培养严谨求实的科学态度。\n\n' +
+'四、说教法学法\n教法上，我采用情境教学法与启发式教学法相结合；学法上，引导学生自主探究、合作交流，真正做到把课堂还给学生。\n\n' +
+'五、说教学过程\n第一个环节，创设情境，激趣导入。我用"三角形三兄弟争论谁的内角和大"的故事引入，激发学生的好奇心与求知欲。\n第二个环节，动手操作，探究新知。学生先用量角器测量不同类型的三角形，再通过撕拼、折叠的方法验证猜想，从多种途径得出结论。\n第三个环节，分层练习，巩固提升。设计基础题、变式题和拓展题，满足不同层次学生的需要。\n第四个环节，课堂小结，回顾反思。引导学生谈谈本节课的收获，梳理知识结构。\n\n' +
+'我的说课到此结束，谢谢各位评委老师的聆听！';
+
+  var editor = document.getElementById('editor');
+  var stats = document.getElementById('stats');
+  var editView = document.getElementById('editView');
+  var playView = document.getElementById('playView');
+  var scroller = document.getElementById('scroller');
+  var scriptBody = document.getElementById('scriptBody');
+  var progressBar = document.getElementById('progressBar');
+  var controls = document.getElementById('controls');
+  var playPauseBtn = document.getElementById('playPauseBtn');
+  var speedSlider = document.getElementById('speedSlider');
+  var fontSlider = document.getElementById('fontSlider');
+
+  var playing = false, rafId = 0, lastT = 0, hideTimer = 0;
+
+  // 载入保存的讲稿
+  try { editor.value = localStorage.getItem(STORAGE_KEY) || SAMPLE; }
+  catch (e) { editor.value = SAMPLE; }
+
+  function updateStats() {
+    var n = editor.value.replace(/\s/g, '').length;
+    stats.textContent = '共 ' + n + ' 字' + (n > 0 ? '，约 ' + Math.max(1, Math.round(n / 260)) + ' 分钟（按 260 字/分）' : '');
+  }
+  editor.addEventListener('input', function () {
+    updateStats();
+    try { localStorage.setItem(STORAGE_KEY, editor.value); } catch (e) {}
+  });
+  updateStats();
+
+  document.getElementById('sampleBtn').onclick = function () {
+    editor.value = SAMPLE;
+    editor.dispatchEvent(new Event('input'));
+  };
+  document.getElementById('clearBtn').onclick = function () {
+    editor.value = '';
+    editor.dispatchEvent(new Event('input'));
+  };
+
+  function renderScript() {
+    var paras = editor.value.split(/\n+/);
+    var html = '';
+    for (var i = 0; i < paras.length; i++) {
+      var p = paras[i];
+      if (p.trim()) {
+        html += '<p>' + p.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</p>';
+      } else {
+        html += '<div style="margin-bottom:32px"></div>';
+      }
+    }
+    scriptBody.innerHTML = html;
+    applyFont();
+  }
+  function applyFont() {
+    var ps = scriptBody.querySelectorAll('p');
+    for (var i = 0; i < ps.length; i++) ps[i].style.fontSize = fontSlider.value + 'px';
+    document.getElementById('fontVal').textContent = fontSlider.value;
+  }
+
+  function step(t) {
+    if (!playing) return;
+    var dt = lastT ? t - lastT : 16;
+    lastT = t;
+    scroller.scrollTop += (speedSlider.value * 15 * dt) / 1000; // 15~150 px/s
+    var max = scroller.scrollHeight - scroller.clientHeight;
+    if (scroller.scrollTop >= max - 1) { setPlaying(false); return; }
+    rafId = requestAnimationFrame(step);
+  }
+  function setPlaying(v) {
+    playing = v;
+    playPauseBtn.textContent = v ? '⏸' : '▶';
+    if (v) { lastT = 0; rafId = requestAnimationFrame(step); }
+    else cancelAnimationFrame(rafId);
+  }
+
+  scroller.addEventListener('scroll', function () {
+    var max = scroller.scrollHeight - scroller.clientHeight;
+    progressBar.style.width = (max > 0 ? (scroller.scrollTop / max) * 100 : 0) + '%';
+  }, { passive: true });
+
+  function pokeControls() {
+    controls.classList.remove('hidden');
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(function () { controls.classList.add('hidden'); }, 2600);
+  }
+  playView.addEventListener('mousemove', pokeControls);
+  playView.addEventListener('click', pokeControls);
+
+  function enterPlay() {
+    if (!editor.value.trim()) return;
+    renderScript();
+    editView.style.display = 'none';
+    playView.style.display = 'block';
+    scroller.scrollTop = 0;
+    progressBar.style.width = '0';
+    pokeControls();
+    setPlaying(true);
+  }
+  function exitPlay() {
+    setPlaying(false);
+    playView.style.display = 'none';
+    editView.style.display = 'flex';
+  }
+
+  document.getElementById('startBtn').onclick = enterPlay;
+  playPauseBtn.onclick = function () { setPlaying(!playing); pokeControls(); };
+  document.getElementById('restartBtn').onclick = function () { scroller.scrollTop = 0; pokeControls(); };
+  document.getElementById('editBackBtn').onclick = exitPlay;
+  speedSlider.oninput = function () { document.getElementById('speedVal').textContent = speedSlider.value; };
+  fontSlider.oninput = applyFont;
+
+  document.addEventListener('keydown', function (e) {
+    var inPlay = playView.style.display === 'block';
+    if (inPlay) {
+      if (e.code === 'Space') { e.preventDefault(); setPlaying(!playing); pokeControls(); }
+      else if (e.code === 'ArrowUp') { e.preventDefault(); speedSlider.value = Math.min(10, +speedSlider.value + 1); speedSlider.oninput(); pokeControls(); }
+      else if (e.code === 'ArrowDown') { e.preventDefault(); speedSlider.value = Math.max(1, +speedSlider.value - 1); speedSlider.oninput(); pokeControls(); }
+      else if (e.code === 'Escape') { exitPlay(); }
+    } else if (e.ctrlKey && e.code === 'Enter') { e.preventDefault(); enterPlay(); }
+  });
+})();
+</script>
+</body>
+</html>
